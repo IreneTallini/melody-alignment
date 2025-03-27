@@ -6,6 +6,7 @@ from librosa.sequence import dtw
 import soundfile as sf
 import logging
 from termcolor import colored
+import argparse
 
 logging.basicConfig(level=logging.INFO)
 
@@ -57,63 +58,72 @@ class ChromaSimilarityCalculator:
         return alignment_cost_chroma, similarity_chroma
     
 
-HOP_LENGTH = 1024
-SR = 32000
-STRETCH_COEFF = 0.8
-NOTE_REPLACEMENT_COEFF = 0.
-ADDITIVE_NOISE_STD = 0.0
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stretch_coeff", type=float, default=1.)
+    parser.add_argument("--note_replacement_coeff", type=float, default=0.0)
+    parser.add_argument("--additive_noise_std", type=float, default=0.0)
+    return parser.parse_args()
 
-ns_slow = note_seq.midi_file_to_note_sequence("slakh_0.mid")
-ns_fast = note_seq.midi_file_to_note_sequence("slakh_0.mid")
+if __name__ == "__main__":
+    args = parse_args()
+    HOP_LENGTH = 1024
+    SR = 32000
+    STRETCH_COEFF = args.stretch_coeff
+    NOTE_REPLACEMENT_COEFF = args.note_replacement_coeff
+    ADDITIVE_NOISE_STD = args.additive_noise_std
 
-# stretch the second sequence
-logging.info("Stretching second sequence by factor %f", STRETCH_COEFF)
-c_inv = 1 / STRETCH_COEFF
-ns_fast = note_seq.note_seq.sequences_lib.stretch_note_sequence(ns_fast, STRETCH_COEFF)
+    ns_slow = note_seq.midi_file_to_note_sequence("data/slakh_0.mid")
+    ns_fast = note_seq.midi_file_to_note_sequence("data/slakh_0.mid")
 
-# estract subsequence of 10 seconds
-ns_slow = note_seq.note_seq.sequences_lib.extract_subsequence(ns_slow, 10, 20)
-ns_fast = note_seq.note_seq.sequences_lib.extract_subsequence(ns_fast, int(10 * STRETCH_COEFF), int(20 * STRETCH_COEFF))
+    # stretch the second sequence
+    logging.info("Stretching second sequence by factor %f", STRETCH_COEFF)
+    c_inv = 1 / STRETCH_COEFF
+    ns_fast = note_seq.note_seq.sequences_lib.stretch_note_sequence(ns_fast, STRETCH_COEFF)
 
-# replace some of the pitches with a random pitch
-count = 0
-for note in ns_fast.notes:
-    if np.random.rand() < NOTE_REPLACEMENT_COEFF:
-        note.pitch = np.random.randint(0, 128)
-        count += 1
-logging.info("Replaced %d notes with random pitches", count)
+    # estract subsequence of 10 seconds
+    ns_slow = note_seq.note_seq.sequences_lib.extract_subsequence(ns_slow, 10, 20)
+    ns_fast = note_seq.note_seq.sequences_lib.extract_subsequence(ns_fast, int(10 * STRETCH_COEFF), int(20 * STRETCH_COEFF))
 
-# synthesize audio from the MIDI files
-y_slow = note_seq.fluidsynth(ns_slow, sample_rate=SR)
-y_fast = note_seq.fluidsynth(ns_fast, sample_rate=SR)
-y_slow /= np.max(np.abs(y_slow))
-y_fast /= np.max(np.abs(y_fast))
+    # replace some of the pitches with a random pitch
+    count = 0
+    for note in ns_fast.notes:
+        if np.random.rand() < NOTE_REPLACEMENT_COEFF:
+            note.pitch = np.random.randint(0, 128)
+            count += 1
+    logging.info("Replaced %d notes with random pitches", count)
 
-# load real audio WAVs 
-y_real_slow, _ = librosa.load("slakh_0.wav", sr=SR)
-y_real_slow = y_real_slow[SR * 10 : SR * 20]
-y_real_fast = librosa.effects.time_stretch(y_real_slow, rate=c_inv)
-y_real_slow /= np.max(np.abs(y_real_slow))
-y_real_fast /= np.max(np.abs(y_real_fast))
+    # synthesize audio from the MIDI files
+    y_slow = note_seq.fluidsynth(ns_slow, sample_rate=SR)
+    y_fast = note_seq.fluidsynth(ns_fast, sample_rate=SR)
+    y_slow /= np.max(np.abs(y_slow))
+    y_fast /= np.max(np.abs(y_fast))
 
-# add noise
-y_fast += np.random.normal(0, ADDITIVE_NOISE_STD, y_fast.shape)
-y_real_fast += np.random.normal(0, ADDITIVE_NOISE_STD, y_real_fast.shape)
-logging.info("Added noise with std: %f", ADDITIVE_NOISE_STD)
+    # load real audio WAVs 
+    y_real_slow, _ = librosa.load("data/slakh_0.wav", sr=SR)
+    y_real_slow = y_real_slow[SR * 10 : SR * 20]
+    y_real_fast = librosa.effects.time_stretch(y_real_slow, rate=c_inv)
+    y_real_slow /= np.max(np.abs(y_real_slow))
+    y_real_fast /= np.max(np.abs(y_real_fast))
 
-# save the audio files
-sf.write("audio_slow.wav", y_slow, SR)
-sf.write("audio_fast.wav", y_fast, SR)
-sf.write("audio_real_fast.wav", y_real_fast, SR)
-sf.write("audio_real_slow.wav", y_real_slow, SR)
-logging.info("Saved audio files to audio_slow.wav, audio_fast.wav, audio_real_fast.wav, audio_real_slow.wav")
+    # add noise
+    y_fast += np.random.normal(0, ADDITIVE_NOISE_STD, y_fast.shape)
+    y_real_fast += np.random.normal(0, ADDITIVE_NOISE_STD, y_real_fast.shape)
+    logging.info("Added noise with std: %f", ADDITIVE_NOISE_STD)
 
-# test the ChromaSimilarityCalculator
-csc = ChromaSimilarityCalculator(hop_length=HOP_LENGTH, sr=SR)
-alignment_cost_chroma, similarity_chroma = csc.calculate_similarity(y_fast, y_slow, exp_name="midi")
-print(colored("Chroma DTW cost: %.2f, similarity: %.3f" % (alignment_cost_chroma, similarity_chroma), 'green'))
+    # save the audio files
+    sf.write("audio_slow.wav", y_slow, SR)
+    sf.write("audio_fast.wav", y_fast, SR)
+    sf.write("audio_real_fast.wav", y_real_fast, SR)
+    sf.write("audio_real_slow.wav", y_real_slow, SR)
+    logging.info("Saved audio files to audio_slow.wav, audio_fast.wav, audio_real_fast.wav, audio_real_slow.wav")
 
-# test the ChromaSimilarityCalculator on the real audio files
-csc = ChromaSimilarityCalculator()
-alignment_cost_chroma, similarity_chroma = csc.calculate_similarity(y_real_fast, y_real_slow, exp_name="real")
-print(colored("Chroma DTW cost real data: %.2f, similarity: %.3f" % (alignment_cost_chroma, similarity_chroma), 'green'))
+    # test the ChromaSimilarityCalculator
+    csc = ChromaSimilarityCalculator(hop_length=HOP_LENGTH, sr=SR)
+    alignment_cost_chroma, similarity_chroma = csc.calculate_similarity(y_fast, y_slow, exp_name="midi")
+    print(colored("Chroma DTW cost: %.2f, similarity: %.3f" % (alignment_cost_chroma, similarity_chroma), 'green'))
+
+    # test the ChromaSimilarityCalculator on the real audio files
+    csc = ChromaSimilarityCalculator()
+    alignment_cost_chroma, similarity_chroma = csc.calculate_similarity(y_real_fast, y_real_slow, exp_name="real")
+    print(colored("Chroma DTW cost real data: %.2f, similarity: %.3f" % (alignment_cost_chroma, similarity_chroma), 'green'))
