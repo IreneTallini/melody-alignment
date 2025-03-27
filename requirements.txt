@@ -1,0 +1,8 @@
+numpy
+scipy
+librosa
+pandas
+matplotlib
+note_seq
+termcolor
+pyfluidsynth
