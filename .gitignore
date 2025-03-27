@@ -1,0 +1,7 @@
+.qodo
+# exclude all wav in root but not in subdirectories
+*.wav
+!/data/*.wav
+*.mid
+!/data/*.mid
+*.png
